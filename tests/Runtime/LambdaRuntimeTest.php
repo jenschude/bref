@@ -3,9 +3,11 @@
 namespace Bref\Test\Runtime;
 
 use Bref\Runtime\LambdaRuntime;
+use Bref\Runtime\LambdaRuntimeReuse;
 use Bref\Test\Server;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
+use function GuzzleHttp\Psr7\str;
 use PHPUnit\Framework\TestCase;
 
 class LambdaRuntimeTest extends TestCase
@@ -188,6 +190,93 @@ class LambdaRuntimeTest extends TestCase
         $error = json_decode($eventFailureLog->getBody());
         $this->expectOutputRegex('/^Fatal error: Uncaught Exception: Failed encoding Lambda JSON response: Malformed UTF-8 characters, possibly incorrectly encoded/');
         $this->assertSame('Failed encoding Lambda JSON response: Malformed UTF-8 characters, possibly incorrectly encoded', $error->errorMessage);
+    }
 
+    const MAX_EVENTS = 10;
+
+    public function testPerf()
+    {
+        $maxEvents = self::MAX_EVENTS;
+        $responses = [];
+        for ($i = 1; $i <= $maxEvents; $i++) {
+            $responses[] = new Response( // lambda event
+                    200,
+                    [
+                        'lambda-runtime-aws-request-id' => $i
+                    ],
+                    "{ \"i\": \"$i\"}"
+            );
+            $responses[] = new Response(200);
+        }
+        Server::enqueue($responses);
+
+        $r = new LambdaRuntime('localhost:8126');
+
+        $start = microtime(true);
+        for ($i = 1; $i <= $maxEvents; $i++) {
+            $r->processNextEvent(
+                function ($event) {
+                    return ['n' => $event['i']];
+                }
+            );
+        }
+        $end = microtime(true);
+
+        $requests = Server::received();
+        for ($i = 0; $i < $maxEvents; $i++) {
+            /** @var Request $eventRequest */
+            $eventRequest = $requests[$i * 2];
+            /** @var Request $eventResponse */
+            $eventResponse = $requests[($i * 2) + 1];
+            $this->assertSame('GET', $eventRequest->getMethod());
+            $this->assertSame('http://localhost:8126/2018-06-01/runtime/invocation/next', $eventRequest->getUri()->__toString());
+            $this->assertSame('POST', $eventResponse->getMethod());
+            $this->assertSame('http://localhost:8126/2018-06-01/runtime/invocation/' . ($i+1) . '/response', $eventResponse->getUri()->__toString());
+            $this->assertJsonStringEqualsJsonString('{"n": "' . ($i+1) . '"}', $eventResponse->getBody()->__toString());
+        }
+        var_dump("#events: " . $maxEvents . " time: " . ($end - $start) . " handle: init");
+    }
+
+    public function testPerfNew()
+    {
+        $maxEvents = self::MAX_EVENTS;
+        $responses = [];
+        for ($i = 1; $i <= $maxEvents; $i++) {
+            $responses[] = new Response( // lambda event
+                200,
+                [
+                    'lambda-runtime-aws-request-id' => $i
+                ],
+                "{ \"i\": \"$i\"}"
+            );
+            $responses[] = new Response(200);
+        }
+        Server::enqueue($responses);
+
+        $r = new LambdaRuntimeReuse('localhost:8126');
+
+        $start = microtime(true);
+        for ($i = 1; $i <= $maxEvents; $i++) {
+            $r->processNextEvent(
+                function ($event) {
+                    return ['n' => $event['i']];
+                }
+            );
+        }
+        $end = microtime(true);
+
+        $requests = Server::received();
+        for ($i = 0; $i < $maxEvents; $i++) {
+            /** @var Request $eventRequest */
+            $eventRequest = $requests[$i * 2];
+            /** @var Request $eventResponse */
+            $eventResponse = $requests[($i * 2) + 1];
+            $this->assertSame('GET', $eventRequest->getMethod());
+            $this->assertSame('http://localhost:8126/2018-06-01/runtime/invocation/next', $eventRequest->getUri()->__toString());
+            $this->assertSame('POST', $eventResponse->getMethod());
+            $this->assertSame('http://localhost:8126/2018-06-01/runtime/invocation/' . ($i+1) . '/response', $eventResponse->getUri()->__toString());
+            $this->assertJsonStringEqualsJsonString('{"n": "' . ($i+1) . '"}', $eventResponse->getBody()->__toString());
+        }
+        var_dump("#events: " . $maxEvents . " time: " . ($end - $start) . " handle: reuse");
     }
 }
