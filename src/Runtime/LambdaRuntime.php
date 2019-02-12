@@ -30,9 +30,9 @@ class LambdaRuntime
      */
     private $handler;
 
-    public static function fromEnvironmentVariable(): self
+    public static function fromEnvironmentVariable(LambdaHandler $handler = null): self
     {
-        return new self(getenv('AWS_LAMBDA_RUNTIME_API'));
+        return new self(getenv('AWS_LAMBDA_RUNTIME_API'), $handler);
     }
 
     public function __construct(string $apiUrl, LambdaHandler $handler = null)
