@@ -24,7 +24,7 @@ class LambdaRuntimeTest extends TestCase
         Server::stop();
     }
 
-    const MAX_EVENTS = 10;
+    const MAX_EVENTS = 100;
 
     public function getHandlers()
     {
@@ -268,6 +268,6 @@ class LambdaRuntimeTest extends TestCase
             $this->assertSame('http://localhost:8126/2018-06-01/runtime/invocation/' . ($i+1) . '/response', $eventResponse->getUri()->__toString());
             $this->assertJsonStringEqualsJsonString('{"n": "' . ($i+1) . '"}', $eventResponse->getBody()->__toString());
         }
-        echo "#events: " . $maxEvents . " time: " . ($end - $start) . " handler: " . (!is_null($handler) ? get_class($handler) : 'default') . PHP_EOL;
+        echo "#events: " . $maxEvents . " time(ms): " . (($end - $start) * 1000) . " handler: " . (!is_null($handler) ? get_class($handler) : 'default') . PHP_EOL;
     }
 }
