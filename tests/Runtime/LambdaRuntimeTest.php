@@ -23,7 +23,21 @@ class LambdaRuntimeTest extends TestCase
         Server::stop();
     }
 
-    public function testRuntime()
+    const MAX_EVENTS = 10;
+
+    public function getHandlers()
+    {
+        return [
+            'default' => [null],
+            CurlHandler::class => [new CurlHandler()],
+            CurlReuseHandler::class => [new CurlReuseHandler()]
+        ];
+    }
+
+    /**
+     * @dataProvider getHandlers
+     */
+    public function testRuntime(LambdaHandler $handler = null)
     {
         Server::enqueue([
             new Response( // lambda event
@@ -36,7 +50,7 @@ class LambdaRuntimeTest extends TestCase
             new Response(200) // lambda response accepted
         ]);
 
-        $r = new LambdaRuntime('localhost:8126');
+        $r = new LambdaRuntime('localhost:8126', $handler);
         $r->processNextEvent(
             function ($event) {
                 return ['hello' => 'world'];
@@ -56,7 +70,10 @@ class LambdaRuntimeTest extends TestCase
         $this->assertJsonStringEqualsJsonString('{"hello": "world"}', $eventResponse->getBody()->__toString());
     }
 
-    public function testFailedHandler()
+    /**
+     * @dataProvider getHandlers
+     */
+    public function testFailedHandler(LambdaHandler $handler = null)
     {
         $this->expectExceptionMessage('Failed to fetch next Lambda invocation: The requested URL returned error: 404 Not Found');
         Server::enqueue([
@@ -69,7 +86,7 @@ class LambdaRuntimeTest extends TestCase
             ),
         ]);
 
-        $r = new LambdaRuntime('localhost:8126');
+        $r = new LambdaRuntime('localhost:8126', $handler);
         $r->processNextEvent(
             function ($event) {
                 return ['hello' => 'world'];
@@ -77,7 +94,10 @@ class LambdaRuntimeTest extends TestCase
         );
     }
 
-    public function testMissingInvocationId()
+    /**
+     * @dataProvider getHandlers
+     */
+    public function testMissingInvocationId(LambdaHandler $handler = null)
     {
         $this->expectExceptionMessage('Failed to determine the Lambda invocation ID');
         Server::enqueue([
@@ -88,7 +108,7 @@ class LambdaRuntimeTest extends TestCase
             ),
         ]);
 
-        $r = new LambdaRuntime('localhost:8126');
+        $r = new LambdaRuntime('localhost:8126', $handler);
         $r->processNextEvent(
             function ($event) {
                 return ['hello' => 'world'];
@@ -96,7 +116,10 @@ class LambdaRuntimeTest extends TestCase
         );
     }
 
-    public function testEmptyBody()
+    /**
+     * @dataProvider getHandlers
+     */
+    public function testEmptyBody(LambdaHandler $handler = null)
     {
         $this->expectExceptionMessage('Empty Lambda runtime API response');
         Server::enqueue([
@@ -108,7 +131,7 @@ class LambdaRuntimeTest extends TestCase
             ),
         ]);
 
-        $r = new LambdaRuntime('localhost:8126');
+        $r = new LambdaRuntime('localhost:8126', $handler);
         $r->processNextEvent(
             function ($event) {
                 return ['hello' => 'world'];
@@ -116,7 +139,10 @@ class LambdaRuntimeTest extends TestCase
         );
     }
 
-    public function testErrorOnResponse()
+    /**
+     * @dataProvider getHandlers
+     */
+    public function testErrorOnResponse(LambdaHandler $handler = null)
     {
         Server::enqueue([
             new Response( // lambda event
@@ -130,7 +156,7 @@ class LambdaRuntimeTest extends TestCase
             new Response(200)
         ]);
 
-        $r = new LambdaRuntime('localhost:8126');
+        $r = new LambdaRuntime('localhost:8126', $handler);
         $r->processNextEvent(
             function ($event) {
                 return $event;
@@ -157,7 +183,10 @@ class LambdaRuntimeTest extends TestCase
         $this->assertSame('Error while calling the Lambda runtime API: The requested URL returned error: 400 Bad Request', $error->errorMessage);
     }
 
-    public function testInvalidResponse()
+    /**
+     * @dataProvider getHandlers
+     */
+    public function testInvalidResponse(LambdaHandler $handler = null)
     {
         Server::enqueue([
             new Response( // lambda event
@@ -170,7 +199,7 @@ class LambdaRuntimeTest extends TestCase
             new Response(200)
         ]);
 
-        $r = new LambdaRuntime('localhost:8126');
+        $r = new LambdaRuntime('localhost:8126', $handler);
         $r->processNextEvent(
             function ($event) {
                 return "\xB1\x31";
@@ -193,20 +222,10 @@ class LambdaRuntimeTest extends TestCase
         $this->assertSame('Failed encoding Lambda JSON response: Malformed UTF-8 characters, possibly incorrectly encoded', $error->errorMessage);
     }
 
-    const MAX_EVENTS = 10;
-
-    public function getHandlers()
-    {
-        return [
-            CurlHandler::class => [new CurlHandler()],
-            CurlReuseHandler::class => [new CurlReuseHandler()]
-        ];
-    }
-
     /**
      * @dataProvider getHandlers
      */
-    public function testPerf(LambdaHandler $handler)
+    public function testPerf(LambdaHandler $handler = null)
     {
         $maxEvents = self::MAX_EVENTS;
         $responses = [];
@@ -246,6 +265,6 @@ class LambdaRuntimeTest extends TestCase
             $this->assertSame('http://localhost:8126/2018-06-01/runtime/invocation/' . ($i+1) . '/response', $eventResponse->getUri()->__toString());
             $this->assertJsonStringEqualsJsonString('{"n": "' . ($i+1) . '"}', $eventResponse->getBody()->__toString());
         }
-        echo "#events: " . $maxEvents . " time: " . ($end - $start) . " handler: " . get_class($handler) . PHP_EOL;
+        echo "#events: " . $maxEvents . " time: " . ($end - $start) . " handler: " . (!is_null($handler) ? get_class($handler) : 'default') . PHP_EOL;
     }
 }
