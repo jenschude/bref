@@ -6,6 +6,7 @@ use Bref\Runtime\CurlHandler;
 use Bref\Runtime\CurlReuseHandler;
 use Bref\Runtime\LambdaHandler;
 use Bref\Runtime\LambdaRuntime;
+use Bref\Runtime\GuzzleHandler;
 use Bref\Test\Server;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
@@ -30,7 +31,8 @@ class LambdaRuntimeTest extends TestCase
         return [
             'default' => [null],
             CurlHandler::class => [new CurlHandler()],
-            CurlReuseHandler::class => [new CurlReuseHandler()]
+            CurlReuseHandler::class => [new CurlReuseHandler()],
+            GuzzleHandler::class => [new GuzzleHandler()],
         ];
     }
 
@@ -75,7 +77,7 @@ class LambdaRuntimeTest extends TestCase
      */
     public function testFailedHandler(LambdaHandler $handler = null)
     {
-        $this->expectExceptionMessage('Failed to fetch next Lambda invocation: The requested URL returned error: 404 Not Found');
+        $this->expectExceptionMessageRegExp('/Failed to fetch next Lambda invocation: .*404 Not Found/');
         Server::enqueue([
             new Response( // lambda event
                 404,
@@ -179,8 +181,9 @@ class LambdaRuntimeTest extends TestCase
         $this->assertSame('http://localhost:8126/2018-06-01/runtime/invocation/1/error', $eventFailureLog->getUri()->__toString());
 
         $error = json_decode($eventFailureLog->getBody());
-        $this->expectOutputRegex('/^Fatal error: Uncaught Exception: Error while calling the Lambda runtime API: The requested URL returned error: 400 Bad Request/');
-        $this->assertSame('Error while calling the Lambda runtime API: The requested URL returned error: 400 Bad Request', $error->errorMessage);
+        $this->expectOutputRegex('/^Fatal error: Uncaught Exception: Error while calling the Lambda runtime API: .*400 Bad Request/');
+        $this->assertStringStartsWith('Error while calling the Lambda runtime API: ', $error->errorMessage);
+        $this->assertContains('400 Bad Request', $error->errorMessage);
     }
 
     /**
