@@ -47,8 +47,10 @@ class CurlReuseHandler implements LambdaHandler
         });
 
         curl_exec($this->handler);
-        if (curl_error($this->handler)) {
-            throw new \Exception('Failed to fetch next Lambda invocation: ' . curl_error($this->handler));
+        if (curl_errno($this->handler) > 0) {
+            $message = curl_error($this->handler);
+            $this->closeHandler();
+            throw new \Exception('Failed to fetch next Lambda invocation: ' . $message);
         }
         if ($invocationId === '') {
             throw new \Exception('Failed to determine the Lambda invocation ID');
