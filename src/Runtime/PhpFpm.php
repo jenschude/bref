@@ -42,12 +42,15 @@ final class PhpFpm
 
     /** @var bool */
     private $resolvePrefix;
+    /** @var callable */
+    private $prefixResolver;
 
-    public function __construct(string $handler, string $configFile = self::CONFIG, bool $resolvePrefix = false)
+    public function __construct(string $handler, string $configFile = self::CONFIG, ?callable $prefixResolver = null)
     {
         $this->handler = $handler;
         $this->configFile = $configFile;
-        $this->resolvePrefix = $resolvePrefix;
+        $this->resolvePrefix = is_callable($prefixResolver);
+        $this->prefixResolver = $prefixResolver;
     }
 
     /**
@@ -112,7 +115,7 @@ final class PhpFpm
      *
      * @param mixed $event
      */
-    public function proxy($event): LambdaResponse
+    public function proxy($event, ?callable $prefixResolver = null): LambdaResponse
     {
         if (isset($event['warmer']) && $event['warmer'] === true) {
             return new LambdaResponse(100, [], 'Lambda is warm');
@@ -123,7 +126,6 @@ final class PhpFpm
         }
 
         $request = $this->eventToFastCgiRequest($event);
-
         try {
             $response = $this->client->sendRequest($request);
         } catch (\Throwable $e) {
@@ -186,14 +188,13 @@ final class PhpFpm
 
         $queryString = $this->getQueryString($event);
 
-        $uri = $requestUri = $event['path'] ?? '/';
+        $uri = $event['path'] ?? '/';
 
-        if ($this->resolvePrefix && isset($event['requestContext']['path'])) {
-            $requestUri = $event['requestContext']['path'];
-            $request->setCustomVar('SCRIPT_NAME', rtrim(str_replace($uri, '/', $requestUri), '/') . '/' . basename($this->handler));
+        if ($this->resolvePrefix) {
+            [$uri, $request] = ($this->prefixResolver)($uri, $event, $request);
         }
         if (! empty($queryString)) {
-            $requestUri .= '?' . $queryString;
+            $uri .= '?' . $queryString;
         }
 
         $protocol = $event['requestContext']['protocol'] ?? 'HTTP/1.1';
@@ -210,7 +211,7 @@ final class PhpFpm
         }
         $headers = array_change_key_case($headers, CASE_LOWER);
 
-        $request->setRequestUri($requestUri);
+        $request->setRequestUri($uri);
         $request->setRemoteAddress('127.0.0.1');
         $request->setRemotePort((int) ($headers['x-forwarded-port'][0] ?? 80));
         $request->setServerAddress('127.0.0.1');
