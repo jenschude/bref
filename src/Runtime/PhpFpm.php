@@ -40,10 +40,14 @@ final class PhpFpm
     /** @var Process|null */
     private $fpm;
 
-    public function __construct(string $handler, string $configFile = self::CONFIG)
+    /** @var bool */
+    private $resolvePrefix;
+
+    public function __construct(string $handler, string $configFile = self::CONFIG, bool $resolvePrefix = false)
     {
         $this->handler = $handler;
         $this->configFile = $configFile;
+        $this->resolvePrefix = $resolvePrefix;
     }
 
     /**
@@ -184,7 +188,7 @@ final class PhpFpm
 
         $uri = $requestUri = $event['path'] ?? '/';
 
-        if (isset($event['requestContext']['path'])) {
+        if ($this->resolvePrefix && isset($event['requestContext']['path'])) {
             $requestUri = $event['requestContext']['path'];
             $request->setCustomVar('SCRIPT_NAME', rtrim(str_replace($uri, '/', $requestUri), '/') . '/' . basename($this->handler));
         }
